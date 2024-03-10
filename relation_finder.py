@@ -43,7 +43,6 @@ class relation_finder:
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            IQR = Q3 - Q1
             return (data >= lower_bound) & (data <= upper_bound)
         y_mask = iqr_filter(y)
         outs = [i for i, o in enumerate(y_mask) if o == False]
@@ -159,11 +158,12 @@ class relation_finder:
 
             my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * x/div)
             if use_gaussian:
-                my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b + x/div)
+#                 my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b + x/div)
+                my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * (1 + x/div))
     
-#             X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
-            X_train_filtered = X_train
-            Y_train_filtered = Y_train
+            X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
+#             X_train_filtered = X_train
+#             Y_train_filtered = Y_train
 #             params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered)
             params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered, func=my_exp_func)
             
@@ -193,7 +193,8 @@ class relation_finder:
                     print(f"Slope (original scale): {c/div:.5f}")
                     print(f"Exponential Factor: {b:.5f}")
                     if use_gaussian:
-                        equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}+(x/{div}))"
+#                         equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}+(x/{div}))"
+                        equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(1+x/{div}))"
                     else:
                         equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
                     print(f"Equation:", equation)
