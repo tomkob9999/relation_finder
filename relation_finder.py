@@ -191,7 +191,7 @@ class relation_finder:
                     print(f"Slope (original scale): {c/div:.5f}")
                     print(f"Exponential Factor: {b:.5f}")
                     equation = f"y = ({a:.8f}+{c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
-                    print(f"Equation (x de-scaled by {div}):", equation)
+                    print(f"Equation:", equation)
                     print("R2:", round(r2, 5))
 #                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
