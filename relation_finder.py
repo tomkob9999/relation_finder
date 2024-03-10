@@ -75,7 +75,7 @@ class relation_finder:
         return curve_fit(relation_finder.poly_func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
         
 
-    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False):
+    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False, use_gaussian=False):
 
         if use_lasso:
             dic_relation = {
@@ -158,6 +158,8 @@ class relation_finder:
 #             X_train = [r/div for r in X_train]
 
             my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * x/div)
+            if use_gaussian:
+                my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b + x/div)
     
 #             X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
             X_train_filtered = X_train
@@ -190,7 +192,10 @@ class relation_finder:
                     print(f"Intercept: {a:.5f}")
                     print(f"Slope (original scale): {c/div:.5f}")
                     print(f"Exponential Factor: {b:.5f}")
-                    equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
+                    if use_gaussian:
+                        equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}+(x/{div}))"
+                    else:
+                        equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
                     print(f"Equation:", equation)
                     print("R2:", round(r2, 5))
 #                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
