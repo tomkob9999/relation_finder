@@ -1,7 +1,7 @@
 # Relation Finder
 
 # Author: Tomio Kobayashi
-# Version 1.0.1
+# Version 1.0.2
 # Updated: 2024/03/10
 
 import numpy as np
@@ -15,7 +15,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy import stats as statss
 import matplotlib.pyplot as plt
-# import seaborn as sns
 import pandas as pd
 import sympy as sp
 from scipy.optimize import curve_fit
@@ -61,12 +60,14 @@ class relation_finder:
     def poly_func(x, a, b, c):
         return a + c*x + b*x**2
 
-    def fit_exp(x_data, y_data, init_guess=[]):
+    def fit_exp(x_data, y_data, func=None, init_guess=[]):
+        if func is None:
+            func = relation_finder.exp_func
         try:
-            return curve_fit(relation_finder.exp_func, x_data, y_data, method="dogbox", nan_policy="omit")
+            return curve_fit(func, x_data, y_data, method="dogbox", nan_policy="omit")
         except RuntimeError as e:
             try:
-                return curve_fit(relation_finder.exp_func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
+                return curve_fit(func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
             except RuntimeError as ee:
                 return None, None
 
@@ -118,7 +119,7 @@ class relation_finder:
             model = Lasso()
             X_train = [r[:-1]for r in data]
             Y_train = [r[-1]for r in data]
-            X_train, Y_train = find_relations.remove_outliers(X_train, Y_train)
+            X_train, Y_train = relation_finder.remove_outliers(X_train, Y_train)
             model.fit(X_train, Y_train)
 
             print(f"Relation to {colY}")
@@ -154,10 +155,15 @@ class relation_finder:
             
             # reduced to less than 10 so that exponential can be used in regression
             div = 10**int(np.log10(max(X_train)))
-            X_train = [r/div for r in X_train]
-            X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
-            
-            params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered)
+#             X_train = [r/div for r in X_train]
+
+            my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * x/div)
+    
+#             X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
+            X_train_filtered = X_train
+            Y_train_filtered = Y_train
+#             params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered)
+            params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered, func=my_exp_func)
             
             poly_used = False
             if params is None:
@@ -168,7 +174,7 @@ class relation_finder:
             if poly_used:
                 predictions = [relation_finder.poly_func(x, a, b, c) for x in X_train]
             else:
-                predictions = [relation_finder.exp_func(x, a, b, c) for x in X_train]
+                predictions = [my_exp_func(x, a, b, c) for x in X_train]
             r2 = r2_score(Y_train, predictions)
             if np.abs(b) < const_thresh and np.abs(c) < const_thresh :
                 print(f"{colY} is CONSTANT to {colX} with constant value of {a:.5f} with confidence level (R2) of {r2*100:.2f}%")
@@ -178,15 +184,15 @@ class relation_finder:
                     print(f"EXPONENTIAL GROWH DETECTED {b:.5f}")
                     print("   *   *   *   *   *")
                 if poly_used:
-                    equation = f"y = {a:.5f} + {c:.5f}*x + {b:.5f}*x**2)"
+                    equation = f"y = {a:.8f} + {c:.8f}*x + {b:.8f}*x**2)"
                     print(f"Equation:", equation)
                 else:
                     print(f"Intercept: {a:.5f}")
                     print(f"Slope (original scale): {c/div:.5f}")
                     print(f"Exponential Factor: {b:.5f}")
-                    equation = f"y = ({a:.5f}+{c:.5f}*(x/{div}))) * e**({b:.5f}*(x/{div}))"
+                    equation = f"y = ({a:.8f}+{c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
                     print(f"Equation (x de-scaled by {div}):", equation)
-                    print("  R2:", round(r2, 5))
+                    print("R2:", round(r2, 5))
 #                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
                 df = pd.DataFrame(pdata, columns=[colX, colY])
@@ -198,7 +204,7 @@ class relation_finder:
                 plt.ylabel(colY)
                 # Generate x values for the line
                 x_line = np.linspace(min(X_train), max(X_train), 1000)  # 100 points from min to max of scatter data
-                y_line = [relation_finder.exp_func(x, a, b, c) if not poly_used else relation_finder.poly_func(x, a, b, c) for x in x_line]
+                y_line = [my_exp_func(x, a, b, c) if not poly_used else relation_finder.poly_func(x, a, b, c) for x in x_line]
                 # Plot the line
                 plt.plot(x_line, y_line, color='red', label='Line: ' + equation)
                 plt.figure(figsize=(3, 2))
