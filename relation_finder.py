@@ -1,8 +1,8 @@
 # Relation Finder
 
 # Author: Tomio Kobayashi
-# Version 1.0.2
-# Updated: 2024/03/10
+# Version 1.0.3
+# Updated: 2024/03/11
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -66,7 +66,10 @@ class relation_finder:
             return curve_fit(func, x_data, y_data, method="dogbox", nan_policy="omit")
         except RuntimeError as e:
             try:
-                return curve_fit(func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
+                guess = init_guess
+                if len(guess) == 0:
+                    guess = [min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)]
+                return curve_fit(func, x_data, y_data, method="dogbox", nan_policy="omit", p0=guess)
             except RuntimeError as ee:
                 return None, None
 
@@ -74,7 +77,7 @@ class relation_finder:
         return curve_fit(relation_finder.poly_func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
         
 
-    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False, use_gaussian=False):
+    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False):
 
         if use_lasso:
             dic_relation = {
@@ -152,32 +155,55 @@ class relation_finder:
             for jum in jumps:
                 print("JUMP DETECTED at", colX, "(original scale)=", X_train[jum], ",", colY, "=", Y_train[jum])
             
-            # reduced to less than 10 so that exponential can be used in regression
-            div = 10**int(np.log10(max(X_train)))
-#             X_train = [r/div for r in X_train]
 
-            my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * x/div)
-            if use_gaussian:
-#                 my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b + x/div)
-                my_exp_func = lambda x, a, b, c: (a+c*x/div) * np.exp(b * (1 + x/div))
-    
             X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
 #             X_train_filtered = X_train
 #             Y_train_filtered = Y_train
 #             params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered)
-            params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered, func=my_exp_func)
+        
+            # reduced to less than 10 so that exponential can be used in regression
+            div = 10**int(np.log10(max(X_train)))
+
+            use_gaussian = False
+            my_exp_func1 = lambda x, a, b, c: (a+c*x/div) * np.exp(b * x/div)
+            params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered, func=my_exp_func1)
+            if params is None:
+                r2_1 = 0
+            else:
+                a1, b1, c1 = params
+                predictions = [my_exp_func1(x, a1, b1, c1) for x in X_train]
+                r2_1 = r2_score(Y_train, predictions)
+            
+            my_exp_func2 = lambda x, a, b, c: (a+c*x/div) * np.exp(b * (1 + x/div))
+            params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered, func=my_exp_func2)
+            if params is None:
+                r2_2 = 0
+            else:
+                a2, b2, c2 = params
+                predictions = [my_exp_func2(x, a2, b2, c2) for x in X_train]
+                r2_2 = r2_score(Y_train, predictions)
             
             poly_used = False
-            if params is None:
+            if r2_1 == 0 and r2_2 == 0:
                 params, covariance = relation_finder.fit_poly(X_train_filtered, Y_train_filtered)
                 poly_used = True
                 
-            a, b, c = params
-            if poly_used:
+                a, b, c = params
                 predictions = [relation_finder.poly_func(x, a, b, c) for x in X_train]
+                r2 = r2_score(Y_train, predictions)
+            elif r2_1 > r2_2:
+                a, b, c = a1, b1, c1
+                r2 = r2_1
+                my_exp_func = my_exp_func1
             else:
-                predictions = [my_exp_func(x, a, b, c) for x in X_train]
-            r2 = r2_score(Y_train, predictions)
+                use_gaussian = True
+                a, b, c = a2, b2, c2
+                r2 = r2_2
+                my_exp_func = my_exp_func2
+#             print("r2_1", r2_1)
+#             print("r2_2", r2_2)
+#             print("r2", r2)
+
             if np.abs(b) < const_thresh and np.abs(c) < const_thresh :
                 print(f"{colY} is CONSTANT to {colX} with constant value of {a:.5f} with confidence level (R2) of {r2*100:.2f}%")
             else:
@@ -193,17 +219,14 @@ class relation_finder:
                     print(f"Slope (original scale): {c/div:.5f}")
                     print(f"Exponential Factor: {b:.5f}")
                     if use_gaussian:
-#                         equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}+(x/{div}))"
                         equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(1+x/{div}))"
                     else:
                         equation = f"y = ({a:.8f} + {c:.8f}*(x/{div}))) * e**({b:.8f}*(x/{div}))"
                     print(f"Equation:", equation)
                     print("R2:", round(r2, 5))
-#                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
                 pdata = [[x, Y_train[i]] for i, x in enumerate(X_train)]
                 df = pd.DataFrame(pdata, columns=[colX, colY])
                 plt.title("Scatter Plot of " + colX + " and " + colY)
-#                 plt.scatter(data=df, x=colX, y=colY)
                 plt.scatter(X_train, Y_train)
                 plt.scatter([x for i, x in enumerate(X_train) if i in jumps or (i != 0 and i+1 in jumps)], [x for i, x in enumerate(Y_train) if i in jumps or (i != 0 and i+1 in jumps)], color='pink')
                 plt.xlabel(colX)
