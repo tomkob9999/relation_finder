@@ -1,8 +1,8 @@
-# Relation Finder
+## Relation Finder
 
 # Author: Tomio Kobayashi
-# Version 1.0.5
-# Updated: 2024/03/11
+# Version 1.0.8
+# Updated: 2024/03/12
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -18,10 +18,17 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import sympy as sp
 from scipy.optimize import curve_fit
+import copy
 
 class relation_finder:
     
     
+    def __init__(self):
+        self.predictors = []
+        self.lasso_predictors = None
+        self.lasso_used = False
+        self.skip_inverse = False
+        
     def find_jumps(data):
         gaps = [np.abs(data[i] - data[i-1]) for i in range(1, len(data), 1)]
         sorted_data = sorted(gaps)
@@ -77,16 +84,14 @@ class relation_finder:
         return curve_fit(relation_finder.poly_func, x_data, y_data, method="dogbox", nan_policy="omit", p0=[min(y_data), 0, (max(y_data)-min(y_data))/len(y_data)])
         
 
-    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False, skip_outliers=False):
+    def find_relations(data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False, skip_outliers=False, xy_switch=False):
+        return relation_finder().find_relations2(data, colX, colY, cols=cols, const_thresh=const_thresh, skip_inverse=skip_inverse, use_lasso=use_lasso, skip_outliers=skip_outliers, xy_switch=xy_switch)
+    
+        
+    def find_relations2(self, data, colX, colY, cols=[], const_thresh=0.1, skip_inverse=True, use_lasso=False, skip_outliers=False, xy_switch=False):
 
         if use_lasso:
             dic_relation = {
-#                 0: ("P", "Proportional Linearly (Y=a*X)"),
-#                 1: ("IP", "Inversely Proportional Linearly (Y=a*(1/X))"),
-#                 2: ("QP", "Proportional by Square (Y=a*(X^2))"),
-#                 3: ("IQP", "Inversely Proportional by Square (Y=a*(1/X^2))"),
-#                 4: ("SP", "Proportional by Square Root (Y=a*sqrt(X)"),
-#                 5: ("ISP", "Inversely Proportional by Square Root (Y=a*(1/sqrt(X))"),
                 0: ("P", "Proportional Linearly (Y=a*X)"),
                 1: ("IP", "Inversely Proportional Linearly (Y=a*(1/X))"),
                 2: ("QP", "Proportional by exponential of 0.02 (Y=x*e^0.02)"),
@@ -98,62 +103,27 @@ class relation_finder:
 
             if skip_inverse:
                 dic_relation = {
-#                     0: ("P", "Proportional Linearly (Y=a*X)"),
-#                     1: ("QP", "Proportional by Square (Y=a*(X^2))"),
-#                     2: ("SP", "Proportional by Square Root (Y=a*sqrt(X)"),
                     0: ("P", "Proportional Linearly (Y=a*X)"),
                     1: ("QP", "Proportional by exponential of 0.02 (Y=x*e^0.02)"),
                     2: ("SP", "Proportional by exponential of -0.04 (Y=x*e^-0.04)"),
                 }
                 num_incs = 3
-
-            xcol_size = len(data[0])-1
-            if not skip_inverse:
-                for i in range(xcol_size):
-                    for row in data:
-                        row.insert(-1, 1/row[i] if row[i] != 0 else 0)
-            for i in range(xcol_size):
-                for row in data:
-#                     row.insert(-1, row[i] ** 2)
-                    row.insert(-1, row[i] * np.e**-0.02)
-            if not skip_inverse:
-                for i in range(xcol_size):
-                    for row in data:
-#                         row.insert(-1, 1/row[i] ** 2)
-                        row.insert(-1, row[i] * np.e**0.02)
-            for i in range(xcol_size):
-                for row in data:
-#                     row.insert(-1, np.sqrt(row[i]) if row[i] > 0 else np.sqrt(row[i]*-1)*-1)
-                    row.insert(-1, row[i] * np.e**-0.04)
-            if not skip_inverse:
-                for i in range(xcol_size):
-                    for row in data:
-#                         row.insert(-1, 1/np.sqrt(row[i]) if row[i] > 0 else 1/np.sqrt(row[i]*-1)*-1)
-                        row.insert(-1, row[i] * np.e**0.04)
-
-            model = Lasso()
-            X_train = [r[:-1]for r in data]
+            
             Y_train = [r[-1]for r in data]
+            xdata = [r[:-1]for r in data]
+            
+            X_train = relation_finder.expand(xdata, skip_inverse)
+    
+            model = Lasso()
             X_train, Y_train = relation_finder.remove_outliers(X_train, Y_train)
-#             print("X_train", X_train)
-#             print("Y_train", Y_train)
             model.fit(X_train, Y_train)
 
             print(f"Relation to {colY}")
             print("  Intersect:", model.intercept_)
-#             print("  Coeffeicients:", model.coef_)
             print("  Coeffeicients:")
-
-#             print("len(model.coef_)", len(model.coef_))
-#             print("len(cols)", len(cols))
-#             print("len(data[0])", len(data[0]))
-#             print("num_incs", num_incs)
             numcols = int(len(model.coef_)/num_incs)
             for i, c in enumerate(model.coef_):
                 if np.abs(c) > 0.0000001:
-#                     print("i%num_incs", i%num_incs)
-#                     print("int(i/num_incs)", int(i/num_incs))
-#                     print("    ", cols[int(i/num_incs)] if len(cols) > 0 else "    Col" + str(int(i/num_incs)), ":", dic_relation[i%num_incs][1], round(c, 10))
                     print("    ", cols[i%numcols] if len(cols) > 0 else "    Col" + str(int(i/numcols)), ":", dic_relation[int(i/numcols)][1], round(c, 10))
             predictions = model.predict(X_train)
             r2 = r2_score(Y_train, predictions)
@@ -163,10 +133,20 @@ class relation_finder:
                 pdata = [[row[i], row[-1]] for row in data]
                 print("pdata", pdata)
                 df = pd.DataFrame(pdata, columns=[cols[i], colY])
+                if xy_switch:
+                    plt.xlabel(colY)
+                    plt.ylabel(cols[i])
+                else:
+                    plt.xlabel(cols[i])
+                    plt.ylabel(colY)
                 plt.title("Scatter Plot of " + cols[i] + " and " + colY)
                 plt.scatter(data=df, x=cols[i], y=colY)
                 plt.figure(figsize=(3, 2))
                 plt.show()
+                
+            self.lasso_predictor = model
+            self.lasso_used = True
+            self.skip_inverse = skip_inverse
 
             return model.coef_.tolist() + [model.intercept_]
 
@@ -179,12 +159,8 @@ class relation_finder:
             jumps = relation_finder.find_jumps(Y_train)
             for jum in jumps:
                 print("JUMP DETECTED at", colX, "(original scale)=", X_train[jum], ",", colY, "=", Y_train[jum])
-            
 
             X_train_filtered, Y_train_filtered = relation_finder.remove_outliers(X_train, Y_train)
-#             X_train_filtered = X_train
-#             Y_train_filtered = Y_train
-#             params, covariance = relation_finder.fit_exp(X_train_filtered, Y_train_filtered)
         
             # reduced to less than 10 so that exponential can be used in regression
             div = 10**int(np.log10(max(X_train)))
@@ -210,9 +186,6 @@ class relation_finder:
             
             poly_used = False
             
-#             print("r2_1", r2_1)
-#             print("r2_2", r2_2)
-            
             if r2_1 == -999 and r2_2 == -999:
                 params, covariance = relation_finder.fit_poly(X_train_filtered, Y_train_filtered)
                 poly_used = True
@@ -220,6 +193,7 @@ class relation_finder:
                 a, b, c = params
                 predictions = [relation_finder.poly_func(x, a, b, c) for x in X_train]
                 r2 = r2_score(Y_train, predictions)
+                my_exp_func = relation_finder.poly_func
             elif r2_1 > r2_2:
                 a, b, c = a1, b1, c1
                 r2 = r2_1
@@ -229,9 +203,6 @@ class relation_finder:
                 a, b, c = a2, b2, c2
                 r2 = r2_2
                 my_exp_func = my_exp_func2
-#             print("r2_1", r2_1)
-#             print("r2_2", r2_2)
-#             print("r2", r2)
 
             if skip_outliers:
                 X_train_g = X_train_filtered
@@ -242,6 +213,8 @@ class relation_finder:
                 
             if np.abs(b) < const_thresh and np.abs(c) < const_thresh :
                 print(f"{colY} is CONSTANT to {colX} with constant value of {a:.5f} with confidence level (R2) of {r2*100:.2f}%")
+                
+                self.predictors.append((my_exp_func, a, b, c))
                 return [colX, a, 0, 0]
             else:
                 if c > 0 and not poly_used and b > 0.10:
@@ -267,8 +240,14 @@ class relation_finder:
                 plt.scatter(X_train_g, Y_train_g)
                 if not skip_outliers:
                     plt.scatter([x for i, x in enumerate(Y_train_g) if i in jumps or (i != 0 and i+1 in jumps)], [x for i, x in enumerate(Y_train_g) if i in jumps or (i != 0 and i+1 in jumps)], color='pink')
-                plt.xlabel(colX)
-                plt.ylabel(colY)
+
+                if xy_switch:
+                    plt.xlabel(colY)
+                    plt.ylabel(colX)
+                else:
+                    plt.xlabel(colX)
+                    plt.ylabel(colY)
+                    
                 # Generate x values for the line
                 x_line = np.linspace(min(X_train_g), max(X_train_g), 1000)  # 100 points from min to max of scatter data
                 y_line = [my_exp_func(x, a, b, c) if not poly_used else relation_finder.poly_func(x, a, b, c) for x in x_line]
@@ -276,4 +255,40 @@ class relation_finder:
                 plt.plot(x_line, y_line, color='red', label='Line: ' + equation)
                 plt.figure(figsize=(3, 2))
                 plt.show()
+                
+                self.predictors.append((my_exp_func, a, b, c))
+                
                 return [colX, a, c if poly_used else c/div, b]
+
+    def expand(datax, skip_inverse):
+        data = copy.deepcopy(datax)
+        xcol_size = len(data[0])
+        if not skip_inverse:
+            for i in range(xcol_size):
+                for row in data:
+                    row.append(1/row[i] if row[i] != 0 else 0)
+        for i in range(xcol_size):
+            for row in data:
+                row.append(row[i] * np.e**-0.02)
+        if not skip_inverse:
+            for i in range(xcol_size):
+                for row in data:
+                    row.append(row[i] * np.e**0.02)
+        for i in range(xcol_size):
+            for row in data:
+                row.append(row[i] * np.e**-0.04)
+        if not skip_inverse:
+            for i in range(xcol_size):
+                for row in data:
+                    row.append(row[i] * np.e**0.04)
+    
+        return data
+
+    
+    def predict(self, xdata):
+        if self.lasso_used:
+            data = relation_finder.expand(xdata, self.skip_inverse)
+            print(data)
+            return self.lasso_predictor.predict(data)
+        else:
+            return [[p[0](x, p[1], p[2], p[3]) for i, p in enumerate(self.predictors)] for x in xdata]
